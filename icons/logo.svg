@@ -1,0 +1,26 @@
+<svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="8" y1="6" x2="56" y2="58" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#0F172A"/>
+      <stop offset="0.55" stop-color="#12315E"/>
+      <stop offset="1" stop-color="#0891B2"/>
+    </linearGradient>
+    <linearGradient id="wheel" x1="14" y1="14" x2="38" y2="40" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FB7185"/>
+      <stop offset="0.32" stop-color="#F59E0B"/>
+      <stop offset="0.68" stop-color="#2DD4BF"/>
+      <stop offset="1" stop-color="#38BDF8"/>
+    </linearGradient>
+  </defs>
+  <rect x="2.5" y="2.5" width="59" height="59" rx="15" fill="url(#bg)"/>
+  <rect x="2.5" y="2.5" width="59" height="59" rx="15" stroke="#FFFFFF" stroke-opacity="0.24"/>
+  <circle cx="25.5" cy="25.5" r="14.5" fill="url(#wheel)"/>
+  <circle cx="25.5" cy="25.5" r="8.5" fill="#111827"/>
+  <circle cx="20" cy="19.5" r="4.2" fill="#FFFFFF" fill-opacity="0.22"/>
+  <g transform="translate(42 40) rotate(45)">
+    <rect x="-5" y="-18" width="10" height="36" rx="5" fill="#F8FAFC"/>
+    <circle cx="0" cy="-23" r="5.5" fill="#F8FAFC"/>
+    <rect x="-2.7" y="-1" width="5.4" height="7" rx="2.1" fill="#1D4ED8" fill-opacity="0.28"/>
+    <ellipse cx="0" cy="18" rx="3.6" ry="5" fill="#38BDF8"/>
+  </g>
+</svg>

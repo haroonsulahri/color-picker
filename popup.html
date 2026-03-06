@@ -1,0 +1,142 @@
+﻿<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Haroone Color Picker</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="app">
+    <header class="hero">
+      <div class="brand">
+        <span class="brand-mark"><img src="icons/logo.svg" alt=""></span>
+        <div>
+          <h1>Haroone Color Picker</h1>
+        </div>
+      </div>
+      <p id="statusText" class="status">Ready to inspect this page.</p>
+      <div class="hero-actions">
+        <button id="startBtn" class="btn btn-primary">Start Picker</button>
+        <button id="stopBtn" class="btn btn-secondary hidden">Stop Picker</button>
+      </div>
+    </header>
+
+    <main class="layout">
+      <section class="panel current-panel">
+        <div class="panel-head">
+          <h2>Current Selection</h2>
+          <button id="favoriteCurrentBtn" class="icon-btn" type="button" title="Toggle favorite" aria-label="Toggle favorite">&#9733;</button>
+        </div>
+
+        <div class="selection-card">
+          <div id="primaryPreview" class="primary-preview"></div>
+          <div class="selection-meta">
+            <strong id="selectionTitle">No color selected</strong>
+          </div>
+        </div>
+
+        <div class="copy-row">
+          <button class="btn btn-chip copy-format" data-format="hex">HEX</button>
+          <button class="btn btn-chip copy-format" data-format="rgb">RGB</button>
+          <button class="btn btn-chip copy-format" data-format="hsl">HSL</button>
+        </div>
+
+        <div id="copyValue" class="copy-value">No color available</div>
+
+        <div class="swatch-grid">
+          <article class="swatch-card" data-swatch="text">
+            <span class="swatch-preview"></span>
+            <strong>Text</strong>
+            <span class="swatch-value">Unavailable</span>
+          </article>
+          <article class="swatch-card" data-swatch="background">
+            <span class="swatch-preview"></span>
+            <strong>Background</strong>
+            <span class="swatch-value">Unavailable</span>
+          </article>
+          <article class="swatch-card" data-swatch="border">
+            <span class="swatch-preview"></span>
+            <strong>Border</strong>
+            <span class="swatch-value">Unavailable</span>
+          </article>
+        </div>
+
+      </section>
+
+      <section class="panel saved-panel">
+        <div class="panel-head">
+          <h2>Favorites</h2>
+          <button id="clearFavoritesBtn" class="text-btn" type="button">Clear</button>
+        </div>
+        <div id="favoritesList" class="saved-list empty-list">No favorites saved.</div>
+      </section>
+
+      <section class="panel saved-panel">
+        <div class="panel-head">
+          <h2>Recent Colors</h2>
+          <button id="clearRecentsBtn" class="text-btn" type="button">Clear</button>
+        </div>
+        <div id="recentsList" class="saved-list empty-list">No recent colors yet.</div>
+      </section>
+
+      <section class="panel settings-panel">
+        <div class="panel-head">
+          <h2>Settings</h2>
+          <span class="shortcut-pill">Ctrl+Shift+Y</span>
+        </div>
+
+        <label class="field">
+          <span>Default copy format</span>
+          <select id="defaultFormat">
+            <option value="hex">HEX</option>
+            <option value="rgb">RGB</option>
+            <option value="hsl">HSL</option>
+          </select>
+        </label>
+
+        <label class="field inline-field">
+          <span>Copy when selection locks</span>
+          <input id="copyOnClick" type="checkbox">
+        </label>
+
+        <label class="field inline-field">
+          <span>Show alpha in HEX when needed</span>
+          <input id="showAlpha" type="checkbox">
+        </label>
+
+        <label class="field inline-field">
+          <span>Save recent colors</span>
+          <input id="rememberRecents" type="checkbox">
+        </label>
+
+        <label class="field">
+          <span>Recent history limit</span>
+          <input id="recentLimit" type="number" min="5" max="50" step="1">
+        </label>
+
+        <label class="field inline-field">
+          <span>Keep overlay open after copy</span>
+          <input id="keepOverlayOpen" type="checkbox">
+        </label>
+
+        <label class="field">
+          <span>Popup theme</span>
+          <select id="theme">
+            <option value="system">System</option>
+            <option value="light">Light</option>
+            <option value="dark">Dark</option>
+          </select>
+        </label>
+      </section>
+    </main>
+
+    <footer class="app-footer">
+      <a href="https://haroone.com/?utm_source=chrome_extension&utm_medium=popup&utm_campaign=haroone_color_picker&utm_content=footer_link" target="_blank" rel="noopener noreferrer">Built by Haroone</a>
+    </footer>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
+
