@@ -2,16 +2,16 @@
 
 ![Haroone Color Picker Banner](assets/img/color-picker.png)
 
-Haroone Color Picker is a Chrome Manifest V3 extension for sampling colors directly from the visible page, including images, banners, gradients, and tiny UI details. It opens a live in-page picker, shows a zoomed pixel preview, lets you copy `HEX`, `RGB(A)`, or `HSL(A)`, and keeps your preferences, recents, and favorites in local storage.
+Haroone Color Picker is a Chrome Manifest V3 extension for picking colors directly from the visible page, including images, banners, gradients, and small UI details. It opens a live in-page picker, shows a zoomed pixel preview, lets you copy `HEX`, `RGB(A)`, or `HSL(A)`, and stores your preferences, recents, and favorites locally.
 
 ## Highlights
 
-- Real pixel picking from the visible tab, not just computed CSS styles.
-- Works on images, banners, product shots, backgrounds, and small UI elements.
-- Live in-page panel with zoom preview, primary color swatch, copy actions, and reset flow.
-- Popup auto-starts the picker on supported tabs.
+- Real pixel picking from the visible tab, not just computed CSS values.
+- Works on images, banners, product photos, backgrounds, and small interface elements.
+- Live in-page panel with zoom preview, primary color display, copy actions, and reset flow.
+- Popup auto-starts the picker on supported pages.
 - One-click copy for `HEX`, `RGB`, and `HSL`.
-- Recent colors, favorites, and persistent professional settings.
+- Recent colors, favorites, and persistent settings.
 - Minimal Chrome permissions: `activeTab`, `scripting`, and `storage`.
 
 ## Features
@@ -20,22 +20,22 @@ Haroone Color Picker is a Chrome Manifest V3 extension for sampling colors direc
 
 - Hover anywhere on the page to sample the current pixel.
 - Click to lock a color.
-- See a zoomed pixel grid for precise picking.
-- Press `Reset` to continue sampling without closing the picker.
+- Use the zoomed pixel grid for precise selection.
+- Press `Reset` to continue picking without closing the panel.
 - Press `Esc` to exit.
 - Press `Enter` to copy the default format.
 
 ### Popup workflow
 
-- Open the popup and the picker starts automatically on supported pages.
-- View the current picked color and copy it from the popup too.
+- Open the popup and the picker starts automatically on supported tabs.
+- View the current picked color and copy it from the popup.
 - Save colors to favorites.
 - Review recent colors.
 - Change default format, alpha handling, recents behavior, overlay behavior, and theme.
 
 ### Persistence
 
-Stored with `chrome.storage.local`:
+Saved with `chrome.storage.local`:
 
 - default copy format
 - copy-on-click behavior
@@ -52,7 +52,7 @@ Stored with `chrome.storage.local`:
 1. Open `chrome://extensions`.
 2. Enable `Developer mode`.
 3. Click `Load unpacked`.
-4. Select this folder: `haroone-color-picker`.
+4. Select the `color picker` folder.
 
 ## How To Use
 
@@ -71,7 +71,7 @@ Keyboard shortcut:
 ## Permissions
 
 - `activeTab`
-  - lets the extension work on the current tab only when the user starts the picker
+  - gives access to the current tab only when the user starts the picker
 - `scripting`
   - injects the picker overlay on demand
 - `storage`
@@ -80,7 +80,7 @@ Keyboard shortcut:
 ## Project Structure
 
 ```text
-haroone-color-picker/
+color picker/
 ├─ assets/img/color-picker.png
 ├─ background.js
 ├─ content.js
@@ -96,14 +96,14 @@ haroone-color-picker/
 
 - Uses `chrome.tabs.captureVisibleTab()` to sample actual page pixels.
 - Refreshes the capture when the page scrolls or resizes.
-- Shows a stronger visual status message inside the picker panel.
-- Uses a single primary sampled color in the overlay to keep the panel focused.
+- Shows a strong visual status message inside the picker panel.
+- Keeps the in-page panel focused on the primary sampled color.
 
 ## Limitations
 
 - Chrome blocks extensions on pages like `chrome://`, the Chrome Web Store, and some internal browser surfaces.
 - Cross-origin iframe contents are not directly pickable.
-- The picker samples the visible page area, so it depends on what is currently on screen.
+- The picker samples the visible page area, so results depend on what is currently on screen.
 
 ## Development Notes
 
@@ -113,4 +113,4 @@ haroone-color-picker/
 
 ## License
 
-Add your preferred license before publishing.
+This repository does not currently include a license file.
