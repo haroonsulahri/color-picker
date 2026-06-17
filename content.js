@@ -1126,8 +1126,8 @@
         border-radius: 999px;
         border: 1px solid rgba(255, 255, 255, 0.98);
         background:
-          radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.96) 0 2px, transparent 3px),
-          conic-gradient(from 90deg, rgba(20, 184, 166, 0.95), rgba(245, 158, 11, 0.96), rgba(244, 63, 94, 0.92), rgba(20, 184, 166, 0.95));
+          radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.98) 0 2px, transparent 3px),
+          radial-gradient(circle at 50% 50%, rgba(20, 184, 166, 0.18), rgba(20, 184, 166, 0.04) 62%, transparent 64%);
         box-shadow:
           0 0 0 2px rgba(17, 19, 21, 0.72),
           0 10px 26px rgba(17, 19, 21, 0.26),
@@ -1196,9 +1196,23 @@
         width: 18px;
         height: 18px;
         border-radius: 7px;
-        background: conic-gradient(from 45deg, #14b8a6, #f59e0b, #f43f5e, #14b8a6);
-        box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.34), 0 8px 18px rgba(20, 184, 166, 0.16);
+        background:
+          linear-gradient(145deg, #111315, #0f766e);
+        border: 1px solid rgba(255, 255, 255, 0.18);
+        box-shadow: 0 8px 18px rgba(20, 184, 166, 0.14);
         flex: 0 0 auto;
+        position: relative;
+      }
+      .hcp-dot::after {
+        content: "";
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        width: 8px;
+        height: 8px;
+        border: 2px solid #f7fbf8;
+        border-radius: 999px;
+        transform: translate(-50%, -50%);
       }
       .hcp-close {
         appearance: none;

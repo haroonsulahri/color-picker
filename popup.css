@@ -98,16 +98,15 @@ button {
   justify-content: center;
   border-radius: 10px;
   overflow: hidden;
-  background:
-    conic-gradient(from 45deg, #14b8a6, #f59e0b, #f43f5e, #14b8a6);
-  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.32), 0 10px 22px rgba(20, 184, 166, 0.16);
+  background: rgba(255, 255, 255, 0.08);
+  box-shadow: 0 10px 22px rgba(20, 184, 166, 0.14);
   flex: 0 0 auto;
 }
 
 .brand-mark img {
-  width: 26px;
-  height: 26px;
-  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.16));
+  width: 42px;
+  height: 42px;
+  display: block;
 }
 
 .eyebrow {
