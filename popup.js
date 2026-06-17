@@ -15,6 +15,7 @@
     cacheDom();
     bindEvents();
     await refresh();
+    await autoStartPicker();
   }
 
   function cacheDom() {
@@ -72,6 +73,22 @@
     }
 
     setStatus(message || (isPicking ? "Picker is running." : "Ready."), false);
+  }
+
+  async function autoStartPicker() {
+    const supported = Boolean(state.activeTab && state.activeTab.supported);
+    const isPicking = Boolean(
+      state.session &&
+      state.session.isPicking &&
+      state.activeTab &&
+      state.session.tabId === state.activeTab.id
+    );
+
+    if (!supported || isPicking) {
+      return;
+    }
+
+    await runAction("START_PICKER", "Picker started.");
   }
 
   function setBusy(busy) {

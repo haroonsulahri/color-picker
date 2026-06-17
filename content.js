@@ -16,6 +16,7 @@
   const PANEL_ANCHOR_GAP = 30;
   const PANEL_REPOSITION_STEP = 24;
   const SURFACE_SAMPLE_RADIUS = 12;
+  const SURFACE_MIN_RADIUS = 3;
   const SURFACE_BUCKET_SIZE = 12;
   const SURFACE_DOMINANCE_RATIO = 0.46;
   const MEDIA_EXACT_MIN_SIZE = 80;
@@ -600,7 +601,7 @@
     const target = getSamplingTarget(clientX, clientY);
     const surface = target.exact
       ? sampleExactColor(mapped.imageX, mapped.imageY, target.source || target.reason)
-      : sampleSurfaceColor(mapped.imageX, mapped.imageY, mapped.scaleX, mapped.scaleY);
+      : sampleSurfaceColor(mapped.imageX, mapped.imageY, mapped.scaleX, mapped.scaleY, target);
     if (!surface) {
       return null;
     }
@@ -609,6 +610,8 @@
 
     return {
       ...mapped,
+      focusImageX: Number.isFinite(surface.focusImageX) ? surface.focusImageX : mapped.imageX,
+      focusImageY: Number.isFinite(surface.focusImageY) ? surface.focusImageY : mapped.imageY,
       color,
       sampleMode: surface.mode,
       target
@@ -626,18 +629,20 @@
       g: data[1],
       b: data[2],
       a: clampAlpha(data[3] / 255),
-      mode: reason || "pixel"
+      mode: reason || "pixel",
+      focusImageX: imageX,
+      focusImageY: imageY
     };
   }
 
-  function sampleSurfaceColor(centerX, centerY, scaleX, scaleY) {
+  function sampleSurfaceColor(centerX, centerY, scaleX, scaleY, target) {
     if (!state.captureContext || !state.capture) {
       return null;
     }
 
     const width = state.capture.width;
     const height = state.capture.height;
-    const radius = Math.max(3, Math.round(Math.max(scaleX || 1, scaleY || 1) * SURFACE_SAMPLE_RADIUS));
+    const radius = getSurfaceSampleRadius(scaleX, scaleY, target);
     const startX = clamp(centerX - radius, 0, Math.max(0, width - 1));
     const startY = clamp(centerY - radius, 0, Math.max(0, height - 1));
     const endX = clamp(centerX + radius, 0, Math.max(0, width - 1));
@@ -665,18 +670,29 @@
           r: 0,
           g: 0,
           b: 0,
-          a: 0
+          a: 0,
+          focusX: startX + x,
+          focusY: startY + y,
+          focusDistance: Number.POSITIVE_INFINITY
         };
+        const pixelX = startX + x;
+        const pixelY = startY + y;
+        const distance = ((pixelX - centerX) ** 2) + ((pixelY - centerY) ** 2);
 
         bucket.count += 1;
         bucket.r += pixel.r;
         bucket.g += pixel.g;
         bucket.b += pixel.b;
         bucket.a += pixel.a;
+        if (distance < bucket.focusDistance) {
+          bucket.focusX = pixelX;
+          bucket.focusY = pixelY;
+          bucket.focusDistance = distance;
+        }
         buckets.set(key, bucket);
         total += 1;
 
-        if (startX + x === centerX && startY + y === centerY) {
+        if (pixelX === centerX && pixelY === centerY) {
           exact = {
             ...pixel,
             key
@@ -700,7 +716,9 @@
         g: exact.g,
         b: exact.b,
         a: exact.a,
-        mode: "pixel"
+        mode: "pixel",
+        focusImageX: centerX,
+        focusImageY: centerY
       };
     }
 
@@ -709,8 +727,25 @@
       g: Math.round(dominant.g / dominant.count),
       b: Math.round(dominant.b / dominant.count),
       a: clampAlpha(dominant.a / dominant.count),
-      mode: "surface"
+      mode: "surface",
+      focusImageX: dominant.focusX,
+      focusImageY: dominant.focusY
     };
+  }
+
+  function getSurfaceSampleRadius(scaleX, scaleY, target) {
+    const captureScale = Math.max(scaleX || 1, scaleY || 1);
+    const defaultRadius = Math.max(SURFACE_MIN_RADIUS, Math.round(captureScale * SURFACE_SAMPLE_RADIUS));
+    if (!target || !target.rect) {
+      return defaultRadius;
+    }
+
+    const targetRadius = Math.floor(Math.min(target.rect.width || 0, target.rect.height || 0) * captureScale * 0.32);
+    if (!targetRadius) {
+      return defaultRadius;
+    }
+
+    return clamp(targetRadius, SURFACE_MIN_RADIUS, defaultRadius);
   }
 
   function buildSampleColor(sample) {
@@ -740,11 +775,13 @@
     const media = findMediaSamplingElement(element);
     if (!media) {
       const exactSmallTarget = isSmallStandaloneTarget(element);
+      const surfaceElement = getSurfaceSamplingElement(element);
       return {
         exact: exactSmallTarget,
         reason: exactSmallTarget ? "small target" : "surface",
         source: exactSmallTarget ? "pixel" : "surface",
-        label: describeElement(element)
+        label: describeElement(surfaceElement || element),
+        rect: getElementRect(surfaceElement || element)
       };
     }
 
@@ -757,7 +794,29 @@
       exact: !isSmallInlineAsset,
       reason: isSmallInlineAsset ? "surface" : media.tagName.toLowerCase(),
       source: isSmallInlineAsset ? "surface" : media.tagName.toLowerCase(),
-      label: describeElement(media)
+      label: describeElement(media),
+      rect: getElementRect(media)
+    };
+  }
+
+  function getSurfaceSamplingElement(element) {
+    const interactive = findInteractiveAncestor(element);
+    if (interactive) {
+      return interactive;
+    }
+
+    return element;
+  }
+
+  function getElementRect(element) {
+    if (!element || typeof element.getBoundingClientRect !== "function") {
+      return null;
+    }
+
+    const rect = element.getBoundingClientRect();
+    return {
+      width: Math.max(0, rect.width || 0),
+      height: Math.max(0, rect.height || 0)
     };
   }
 
@@ -1124,15 +1183,17 @@
     const half = Math.floor(sourceSize / 2);
     const maxX = Math.max(0, state.capture.width - sourceSize);
     const maxY = Math.max(0, state.capture.height - sourceSize);
-    const startX = clamp(sample.imageX - half, 0, maxX);
-    const startY = clamp(sample.imageY - half, 0, maxY);
+    const focusImageX = Number.isFinite(sample.focusImageX) ? sample.focusImageX : sample.imageX;
+    const focusImageY = Number.isFinite(sample.focusImageY) ? sample.focusImageY : sample.imageY;
+    const startX = clamp(focusImageX - half, 0, maxX);
+    const startY = clamp(focusImageY - half, 0, maxY);
     const pixels = state.captureContext.getImageData(startX, startY, sourceSize, sourceSize).data;
     const cellSize = Math.max(4, Math.floor(Math.min(width, height) / sourceSize));
     const gridSize = cellSize * sourceSize;
     const offsetX = Math.floor((width - gridSize) / 2);
     const offsetY = Math.floor((height - gridSize) / 2);
-    const focusX = sample.imageX - startX;
-    const focusY = sample.imageY - startY;
+    const focusX = focusImageX - startX;
+    const focusY = focusImageY - startY;
     const centerX = offsetX + focusX * cellSize;
     const centerY = offsetY + focusY * cellSize;
     const crosshairX = centerX + Math.floor(cellSize / 2);
