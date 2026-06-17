@@ -11,7 +11,7 @@
   const ACTIVE_CURSOR_ATTR = "data-hcp-picker-active";
   const HOVER_SETTLE_DELAY = 180;
   const VIEWPORT_REFRESH_DELAY = 160;
-  const RETICLE_SIZE = 22;
+  const RETICLE_SIZE = 26;
   const PANEL_EDGE_PADDING = 14;
   const PANEL_ANCHOR_GAP = 30;
   const PANEL_REPOSITION_STEP = 24;
@@ -1510,21 +1510,44 @@
       .hcp-reticle-grid {
         position: absolute;
         inset: 0;
-        background:
-          linear-gradient(90deg, transparent calc(50% - 0.5px), rgba(247, 251, 248, 0.98) calc(50% - 0.5px), rgba(247, 251, 248, 0.98) calc(50% + 0.5px), transparent calc(50% + 0.5px)),
-          linear-gradient(0deg, transparent calc(50% - 0.5px), rgba(247, 251, 248, 0.98) calc(50% - 0.5px), rgba(247, 251, 248, 0.98) calc(50% + 0.5px), transparent calc(50% + 0.5px));
-        filter: drop-shadow(0 1px 1px rgba(17, 19, 21, 0.88)) drop-shadow(0 0 2px rgba(20, 184, 166, 0.65));
+        border-radius: 999px;
+        border: 2px solid rgba(20, 184, 166, 0.98);
+        box-shadow:
+          0 0 0 1px rgba(17, 19, 21, 0.92),
+          0 0 0 3px rgba(247, 251, 248, 0.32),
+          0 3px 10px rgba(17, 19, 21, 0.34);
+      }
+      .hcp-reticle-grid::before,
+      .hcp-reticle-grid::after {
+        content: "";
+        position: absolute;
+        pointer-events: none;
+        filter: drop-shadow(0 1px 1px rgba(17, 19, 21, 0.9));
+      }
+      .hcp-reticle-grid::before {
+        left: 3px;
+        right: 3px;
+        top: calc(50% - 0.5px);
+        height: 1px;
+        background: linear-gradient(90deg, rgba(247, 251, 248, 0.98) 0 calc(50% - 5px), transparent calc(50% - 5px) calc(50% + 5px), rgba(247, 251, 248, 0.98) calc(50% + 5px) 100%);
+      }
+      .hcp-reticle-grid::after {
+        top: 3px;
+        bottom: 3px;
+        left: calc(50% - 0.5px);
+        width: 1px;
+        background: linear-gradient(0deg, rgba(247, 251, 248, 0.98) 0 calc(50% - 5px), transparent calc(50% - 5px) calc(50% + 5px), rgba(247, 251, 248, 0.98) calc(50% + 5px) 100%);
       }
       .hcp-reticle-dot {
         position: absolute;
         left: 50%;
         top: 50%;
-        width: 6px;
-        height: 6px;
+        width: 9px;
+        height: 9px;
         border-radius: 999px;
-        background: rgba(17, 19, 21, 0.32);
-        border: 2px solid #14b8a6;
-        box-shadow: 0 0 0 1px rgba(247, 251, 248, 0.95), 0 1px 2px rgba(17, 19, 21, 0.9);
+        background: transparent;
+        border: 1px solid rgba(247, 251, 248, 0.98);
+        box-shadow: 0 0 0 1px rgba(20, 184, 166, 0.98), 0 1px 2px rgba(17, 19, 21, 0.9);
         transform: translate(-50%, -50%);
       }
       .hcp-panel {
