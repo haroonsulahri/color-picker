@@ -12,13 +12,14 @@
       <div class="brand">
         <span class="brand-mark"><img src="icons/logo.svg" alt=""></span>
         <div>
-          <h1>Haroone Color Picker</h1>
+          <p class="eyebrow">Haroone tool</p>
+          <h1>Pixel Lens</h1>
         </div>
       </div>
-      <p id="statusText" class="status">Ready to inspect this page.</p>
+      <p id="statusText" class="status" aria-live="polite">Ready to inspect this page.</p>
       <div class="hero-actions">
-        <button id="startBtn" class="btn btn-primary">Start Picker</button>
-        <button id="stopBtn" class="btn btn-secondary hidden">Stop Picker</button>
+        <button id="startBtn" class="btn btn-primary">Start lens</button>
+        <button id="stopBtn" class="btn btn-secondary hidden">Stop</button>
       </div>
     </header>
 
@@ -33,6 +34,7 @@
           <div id="primaryPreview" class="primary-preview"></div>
           <div class="selection-meta">
             <strong id="selectionTitle">No color selected</strong>
+            <span>HEX, RGB, and HSL are ready after lock.</span>
           </div>
         </div>
 

@@ -9,9 +9,11 @@
   const ROOT_ID = "haroone-color-picker-root";
   const CURSOR_STYLE_ID = "haroone-color-picker-cursor-style";
   const ACTIVE_CURSOR_ATTR = "data-hcp-picker-active";
-  const HOVER_SETTLE_DELAY = 96;
+  const HOVER_SETTLE_DELAY = 72;
   const VIEWPORT_REFRESH_DELAY = 120;
-  const RETICLE_SIZE = 28;
+  const RETICLE_SIZE = 34;
+  const PANEL_EDGE_PADDING = 14;
+  const PANEL_ANCHOR_GAP = 30;
   const DEFAULT_SETTINGS = {
     defaultFormat: "hex",
     copyOnClick: true,
@@ -451,11 +453,20 @@
 
   function getViewportMetrics() {
     const viewport = window.visualViewport;
+    const layoutWidth = Math.max(1, window.innerWidth || document.documentElement.clientWidth || 1);
+    const layoutHeight = Math.max(1, window.innerHeight || document.documentElement.clientHeight || 1);
+    const visualWidth = Math.max(1, viewport ? viewport.width : layoutWidth);
+    const visualHeight = Math.max(1, viewport ? viewport.height : layoutHeight);
+
     return {
-      width: Math.max(1, viewport ? viewport.width : window.innerWidth),
-      height: Math.max(1, viewport ? viewport.height : window.innerHeight),
+      width: layoutWidth,
+      height: layoutHeight,
+      visualWidth,
+      visualHeight,
       offsetLeft: viewport ? viewport.offsetLeft : 0,
       offsetTop: viewport ? viewport.offsetTop : 0,
+      scrollX: window.scrollX || window.pageXOffset || 0,
+      scrollY: window.scrollY || window.pageYOffset || 0,
       scale: viewport ? viewport.scale || 1 : 1,
       devicePixelRatio: window.devicePixelRatio || 1,
       capturedAt: Date.now()
@@ -476,7 +487,7 @@
     state.selection = buildSelection(sample);
     renderSelection(state.selection, locked);
     positionReticle(sample);
-    positionPanel(state.lockedPoint || state.hoverPoint);
+    positionPanel(sample);
     renderZoom(sample);
     return true;
   }
@@ -517,28 +528,80 @@
     }
 
     const viewport = state.capture.viewport;
-    const clampedX = clamp(Number(clientX) || 0, 0, Math.max(0, viewport.width - 1));
-    const clampedY = clamp(Number(clientY) || 0, 0, Math.max(0, viewport.height - 1));
+    const normalized = normalizeClientPoint(clientX, clientY, viewport);
+    const captureSpace = getCaptureCoordinateSpace(viewport);
+    const imageX = mapCssPixelToCapture(normalized.captureX, captureSpace.width, state.capture.width);
+    const imageY = mapCssPixelToCapture(normalized.captureY, captureSpace.height, state.capture.height);
+    const scaleX = state.capture.width / captureSpace.width;
+    const scaleY = state.capture.height / captureSpace.height;
 
     return {
-      clientX: Math.round(clampedX),
-      clientY: Math.round(clampedY),
-      pageX: Math.round(clampedX + viewport.offsetLeft),
-      pageY: Math.round(clampedY + viewport.offsetTop),
-      imageX: mapAxisToCapture(clampedX, viewport.width, state.capture.width),
-      imageY: mapAxisToCapture(clampedY, viewport.height, state.capture.height)
+      clientX: normalized.clientX,
+      clientY: normalized.clientY,
+      pageX: normalized.pageX,
+      pageY: normalized.pageY,
+      imageX,
+      imageY,
+      scaleX,
+      scaleY
     };
   }
 
-  function mapAxisToCapture(clientValue, viewportSize, captureSize) {
+  function normalizeClientPoint(clientX, clientY, viewport) {
+    const clientBounds = getPanelViewportBounds(viewport);
+    const rawX = Number.isFinite(Number(clientX)) ? Number(clientX) : 0;
+    const rawY = Number.isFinite(Number(clientY)) ? Number(clientY) : 0;
+    const clientClampedX = clamp(rawX, 0, Math.max(0, clientBounds.width - 0.01));
+    const clientClampedY = clamp(rawY, 0, Math.max(0, clientBounds.height - 0.01));
+    const captureSpace = getCaptureCoordinateSpace(viewport);
+    const captureX = clamp(clientClampedX - captureSpace.originX, 0, Math.max(0, captureSpace.width - 0.01));
+    const captureY = clamp(clientClampedY - captureSpace.originY, 0, Math.max(0, captureSpace.height - 0.01));
+
+    return {
+      clientX: clientClampedX,
+      clientY: clientClampedY,
+      captureX,
+      captureY,
+      pageX: (viewport.scrollX || 0) + clientClampedX,
+      pageY: (viewport.scrollY || 0) + clientClampedY
+    };
+  }
+
+  function getCaptureCoordinateSpace(viewport) {
+    const useVisualViewport = Boolean(
+      viewport &&
+      (
+        Math.abs((viewport.visualWidth || viewport.width) - viewport.width) > 0.5 ||
+        Math.abs((viewport.visualHeight || viewport.height) - viewport.height) > 0.5 ||
+        Math.abs(viewport.offsetLeft || 0) > 0.5 ||
+        Math.abs(viewport.offsetTop || 0) > 0.5
+      )
+    );
+
+    if (useVisualViewport) {
+      return {
+        width: Math.max(1, viewport.visualWidth || viewport.width || 1),
+        height: Math.max(1, viewport.visualHeight || viewport.height || 1),
+        originX: viewport.offsetLeft || 0,
+        originY: viewport.offsetTop || 0
+      };
+    }
+
+    return {
+      width: Math.max(1, viewport.width || 1),
+      height: Math.max(1, viewport.height || 1),
+      originX: 0,
+      originY: 0
+    };
+  }
+
+  function mapCssPixelToCapture(clientValue, viewportSize, captureSize) {
     if (captureSize <= 1 || viewportSize <= 1) {
       return 0;
     }
 
-    const clamped = clamp(clientValue, 0, viewportSize - 1);
-    const maxViewport = viewportSize - 1;
-    const maxCapture = captureSize - 1;
-    return clamp(Math.round((clamped / maxViewport) * maxCapture), 0, maxCapture);
+    const clamped = clamp(clientValue, 0, Math.max(0, viewportSize - 0.01));
+    return clamp(Math.floor((clamped / viewportSize) * captureSize), 0, captureSize - 1);
   }
 
   function buildSelection(sample) {
@@ -552,13 +615,13 @@
         label: "Sample"
       },
       border: null,
-      notes: ["Pixel sampled from the visible page. Final lock uses a fresh capture for accuracy."],
+      notes: ["Pixel sampled from a fresh visible-tab capture with device-pixel mapping."],
       elementMeta: {
         tagName: "pixel",
         id: "",
         className: "",
-        label: `Viewport ${sample.clientX}, ${sample.clientY}`,
-        path: `Image pixel ${sample.imageX}, ${sample.imageY}`
+        label: `Viewport ${Math.round(sample.clientX)}, ${Math.round(sample.clientY)}`,
+        path: `Image ${sample.imageX}, ${sample.imageY} - ${sample.scaleX.toFixed(2)}x`
       }
     };
   }
@@ -570,8 +633,8 @@
 
   function getDefaultStatusText() {
     return state.lockedPoint && state.selection && state.selection.primary
-      ? "Color locked. Choose a format or press Reset."
-      : "Move over the page and click to lock a color";
+      ? "Locked sample"
+      : "Sampling live pixels";
   }
 
   function setStatusText(text, tone) {
@@ -618,19 +681,19 @@
     }
 
     restoreStatusText();
-    dom.hint.textContent = active ? formatHex(active, state.settings.showAlpha) : "Move over the page";
+    dom.hint.textContent = active ? formatHex(active, state.settings.showAlpha) : "No color selected";
     dom.path.textContent = selection && selection.elementMeta
       ? `${selection.elementMeta.label} - ${selection.elementMeta.path}`
-      : "Click to lock a pixel sample";
-    dom.zoomLabel.textContent = selection && selection.elementMeta ? selection.elementMeta.label : "Zoom preview";
+      : "Waiting for page movement";
+    dom.zoomLabel.textContent = selection && selection.elementMeta ? selection.elementMeta.label : "Pixel matrix";
     dom.zoomCoords.textContent = selection && selection.elementMeta ? selection.elementMeta.path : "Image pixel";
 
     if (active) {
       dom.note.textContent = isLocked
-        ? `${baseNote} Copy a format or press Reset to sample another color.`
-        : `${baseNote} Click to lock this color.`;
+        ? `${baseNote} Sample pinned.`
+        : `${baseNote} Live preview.`;
     } else {
-      dom.note.textContent = "Move over the page and click to lock a color. Esc exits. Enter copies the default format.";
+      dom.note.textContent = "Ready.";
     }
 
     renderSwatch(dom.primary, active, "Primary");
@@ -702,7 +765,7 @@
     const ctx = metrics.ctx;
     const width = metrics.width;
     const height = metrics.height;
-    const sourceSize = 11;
+    const sourceSize = 15;
     const half = Math.floor(sourceSize / 2);
     const maxX = Math.max(0, state.capture.width - sourceSize);
     const maxY = Math.max(0, state.capture.height - sourceSize);
@@ -713,8 +776,10 @@
     const gridSize = cellSize * sourceSize;
     const offsetX = Math.floor((width - gridSize) / 2);
     const offsetY = Math.floor((height - gridSize) / 2);
-    const centerX = offsetX + half * cellSize;
-    const centerY = offsetY + half * cellSize;
+    const focusX = sample.imageX - startX;
+    const focusY = sample.imageY - startY;
+    const centerX = offsetX + focusX * cellSize;
+    const centerY = offsetY + focusY * cellSize;
     const crosshairX = centerX + Math.floor(cellSize / 2);
     const crosshairY = centerY + Math.floor(cellSize / 2);
 
@@ -746,7 +811,7 @@
       ctx.stroke();
     }
 
-    ctx.strokeStyle = "rgba(255, 255, 255, 0.92)";
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.94)";
     ctx.lineWidth = 2;
     ctx.beginPath();
     ctx.moveTo(crosshairX, offsetY);
@@ -757,10 +822,12 @@
     ctx.lineTo(offsetX + gridSize, crosshairY);
     ctx.stroke();
 
-    ctx.strokeStyle = "rgba(29, 78, 216, 0.95)";
-    ctx.lineWidth = 1;
+    ctx.strokeStyle = "rgba(20, 184, 166, 0.98)";
+    ctx.lineWidth = 2;
     ctx.strokeRect(centerX + 1, centerY + 1, Math.max(1, cellSize - 2), Math.max(1, cellSize - 2));
-    ctx.strokeRect(centerX + 3, centerY + 3, Math.max(1, cellSize - 6), Math.max(1, cellSize - 6));
+    ctx.strokeStyle = "rgba(15, 23, 42, 0.82)";
+    ctx.lineWidth = 1;
+    ctx.strokeRect(centerX + 4, centerY + 4, Math.max(1, cellSize - 8), Math.max(1, cellSize - 8));
   }
 
   function clearZoom() {
@@ -778,8 +845,8 @@
     }
 
     dom.reticle.style.display = "block";
-    dom.reticle.style.left = `${Math.round(sample.clientX - RETICLE_SIZE / 2)}px`;
-    dom.reticle.style.top = `${Math.round(sample.clientY - RETICLE_SIZE / 2)}px`;
+    dom.reticle.style.left = `${roundCss(sample.clientX)}px`;
+    dom.reticle.style.top = `${roundCss(sample.clientY)}px`;
   }
 
   function positionPanel(anchorPoint) {
@@ -788,7 +855,8 @@
     }
 
     const viewport = getViewportMetrics();
-    if (viewport.width <= 420) {
+    const bounds = getPanelViewportBounds(viewport);
+    if (bounds.width <= 420) {
       dom.panel.style.top = "auto";
       dom.panel.style.right = "10px";
       dom.panel.style.bottom = "10px";
@@ -807,28 +875,64 @@
 
     const anchorX = typeof point.clientX === "number" ? point.clientX : point.x;
     const anchorY = typeof point.clientY === "number" ? point.clientY : point.y;
-    const padding = 16;
-    const offset = 24;
-    const panelWidth = Math.min(dom.panel.offsetWidth || 340, Math.max(260, viewport.width - padding * 2));
+    const padding = PANEL_EDGE_PADDING;
+    const offset = PANEL_ANCHOR_GAP;
+    const panelWidth = Math.min(dom.panel.offsetWidth || 340, Math.max(260, bounds.width - padding * 2));
     const panelHeight = dom.panel.offsetHeight || 320;
-    let left = anchorX + offset;
-    let top = anchorY + offset;
+    const placement = choosePanelPlacement(anchorX, anchorY, panelWidth, panelHeight, bounds, padding, offset);
 
-    if (left + panelWidth > viewport.width - padding) {
-      left = anchorX - panelWidth - offset;
-    }
-
-    if (top + panelHeight > viewport.height - padding) {
-      top = anchorY - panelHeight - offset;
-    }
-
-    left = clamp(left, padding, Math.max(padding, viewport.width - panelWidth - padding));
-    top = clamp(top, padding, Math.max(padding, viewport.height - panelHeight - padding));
-
-    dom.panel.style.top = `${Math.round(top)}px`;
+    dom.panel.style.top = `${Math.round(placement.top)}px`;
     dom.panel.style.right = "auto";
     dom.panel.style.bottom = "auto";
-    dom.panel.style.left = `${Math.round(left)}px`;
+    dom.panel.style.left = `${Math.round(placement.left)}px`;
+  }
+
+  function getPanelViewportBounds(viewport) {
+    return {
+      width: Math.max(1, viewport.width || window.innerWidth || 1),
+      height: Math.max(1, viewport.height || window.innerHeight || 1)
+    };
+  }
+
+  function choosePanelPlacement(anchorX, anchorY, panelWidth, panelHeight, bounds, padding, offset) {
+    const candidates = [
+      { left: anchorX + offset, top: anchorY + offset },
+      { left: anchorX - panelWidth - offset, top: anchorY + offset },
+      { left: anchorX + offset, top: anchorY - panelHeight - offset },
+      { left: anchorX - panelWidth - offset, top: anchorY - panelHeight - offset }
+    ];
+
+    const fitting = candidates.find((candidate) => (
+      candidate.left >= padding &&
+      candidate.top >= padding &&
+      candidate.left + panelWidth <= bounds.width - padding &&
+      candidate.top + panelHeight <= bounds.height - padding
+    ));
+
+    if (fitting) {
+      return fitting;
+    }
+
+    const clampedCandidates = candidates
+      .map((candidate) => ({
+        left: clamp(candidate.left, padding, Math.max(padding, bounds.width - panelWidth - padding)),
+        top: clamp(candidate.top, padding, Math.max(padding, bounds.height - panelHeight - padding))
+      }));
+
+    const nonCovering = clampedCandidates.find((candidate) => !isPointInsideRect(anchorX, anchorY, {
+      left: candidate.left,
+      top: candidate.top,
+      right: candidate.left + panelWidth,
+      bottom: candidate.top + panelHeight
+    }));
+
+    const chosen = nonCovering || clampedCandidates
+      .sort((a, b) => distanceFromAnchor(b, anchorX, anchorY) - distanceFromAnchor(a, anchorX, anchorY))[0];
+
+    return chosen || {
+      left: padding,
+      top: padding
+    };
   }
 
   async function resetSelection() {
@@ -860,7 +964,7 @@
       maskMode: "reticle"
     }).catch(() => {});
 
-    flashStatus("Picker reset. Move over the page and click another color.", 1800, "default");
+    flashStatus("Picker reset.", 1600, "default");
   }
 
   async function copyCurrent(format) {
@@ -936,18 +1040,26 @@
       </div>
       <div class="hcp-panel" hidden aria-hidden="true">
         <div class="hcp-head">
-          <div class="hcp-brand"><span class="hcp-dot"></span><span>Haroone Color Picker</span></div>
+          <div class="hcp-brand">
+            <span class="hcp-dot"></span>
+            <span class="hcp-brand-copy">
+              <span>Haroone</span>
+              <strong>Pixel lens</strong>
+            </span>
+          </div>
           <button type="button" class="hcp-close" aria-label="Close picker">&times;</button>
         </div>
-        <div class="hcp-status">Move over any pixel</div>
-        <div class="hcp-hint">Move over the page</div>
-        <div class="hcp-path">Click to lock a pixel sample</div>
+        <div class="hcp-readout">
+          <div class="hcp-status">Sampling live pixels</div>
+          <div class="hcp-hint">No color selected</div>
+          <div class="hcp-path">Waiting for page movement</div>
+        </div>
         <div class="hcp-sample-strip">
           <canvas class="hcp-zoom" width="110" height="110" aria-hidden="true"></canvas>
           <div class="hcp-zoom-meta">
-            <strong class="hcp-zoom-label">Zoom preview</strong>
+            <strong class="hcp-zoom-label">Pixel matrix</strong>
             <span class="hcp-zoom-coords">Image pixel</span>
-            <span class="hcp-zoom-note">Live preview uses the latest capture. Final lock refreshes before sampling.</span>
+            <span class="hcp-zoom-note">Fresh capture on lock</span>
           </div>
         </div>
         <div class="hcp-primary hcp-swatch">
@@ -960,7 +1072,7 @@
           <button type="button" data-format="hsl">HSL</button>
           <button type="button" class="hcp-reset" data-action="reset" disabled>Reset</button>
         </div>
-        <div class="hcp-note">Esc exits. Enter copies the default format.</div>
+        <div class="hcp-note">Ready.</div>
       </div>
     `;
 
@@ -993,12 +1105,13 @@
         z-index: 2147483646;
         pointer-events: none;
         color-scheme: light dark;
-        color: #f8fafc;
-        font-family: "Trebuchet MS", "Segoe UI", sans-serif;
+        color: #f7fbf8;
+        font-family: "Aptos", "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
         font-size: 16px;
         line-height: 1.4;
         -webkit-font-smoothing: antialiased;
         text-size-adjust: 100%;
+        font-variant-numeric: tabular-nums;
       }
       :host([hidden]) { display: none !important; }
       :host([data-capturing="full"]) { visibility: hidden !important; }
@@ -1011,28 +1124,35 @@
         width: ${RETICLE_SIZE}px;
         height: ${RETICLE_SIZE}px;
         border-radius: 999px;
-        border: 2px solid rgba(255, 255, 255, 0.95);
-        background: rgba(15, 23, 42, 0.08);
-        box-shadow: 0 0 0 2px rgba(29, 78, 216, 0.85), 0 0 18px rgba(15, 23, 42, 0.25);
+        border: 1px solid rgba(255, 255, 255, 0.98);
+        background:
+          radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.96) 0 2px, transparent 3px),
+          conic-gradient(from 90deg, rgba(20, 184, 166, 0.95), rgba(245, 158, 11, 0.96), rgba(244, 63, 94, 0.92), rgba(20, 184, 166, 0.95));
+        box-shadow:
+          0 0 0 2px rgba(17, 19, 21, 0.72),
+          0 10px 26px rgba(17, 19, 21, 0.26),
+          0 0 0 6px rgba(20, 184, 166, 0.12);
         pointer-events: none;
+        transform: translate(-50%, -50%);
+        will-change: left, top;
       }
       .hcp-reticle-grid {
         position: absolute;
-        inset: 3px;
+        inset: 5px;
         border-radius: 999px;
         background:
-          linear-gradient(90deg, transparent calc(50% - 0.5px), rgba(255, 255, 255, 0.82) calc(50% - 0.5px), rgba(255, 255, 255, 0.82) calc(50% + 0.5px), transparent calc(50% + 0.5px)),
-          linear-gradient(0deg, transparent calc(50% - 0.5px), rgba(255, 255, 255, 0.82) calc(50% - 0.5px), rgba(255, 255, 255, 0.82) calc(50% + 0.5px), transparent calc(50% + 0.5px));
+          linear-gradient(90deg, transparent calc(50% - 0.5px), rgba(17, 19, 21, 0.72) calc(50% - 0.5px), rgba(17, 19, 21, 0.72) calc(50% + 0.5px), transparent calc(50% + 0.5px)),
+          linear-gradient(0deg, transparent calc(50% - 0.5px), rgba(17, 19, 21, 0.72) calc(50% - 0.5px), rgba(17, 19, 21, 0.72) calc(50% + 0.5px), transparent calc(50% + 0.5px));
       }
       .hcp-reticle-dot {
         position: absolute;
         left: 50%;
         top: 50%;
-        width: 8px;
-        height: 8px;
-        border-radius: 2px;
-        background: rgba(255, 255, 255, 0.98);
-        box-shadow: 0 0 0 2px rgba(29, 78, 216, 0.92), 0 0 0 4px rgba(15, 23, 42, 0.55);
+        width: 7px;
+        height: 7px;
+        border-radius: 999px;
+        background: #f8fafc;
+        box-shadow: 0 0 0 2px rgba(17, 19, 21, 0.9), 0 0 0 4px rgba(255, 255, 255, 0.42);
         transform: translate(-50%, -50%);
       }
       .hcp-panel {
@@ -1041,119 +1161,152 @@
         right: 16px;
         left: auto;
         bottom: auto;
-        width: min(360px, calc(100vw - 32px));
+        width: min(382px, calc(100vw - 28px));
         max-width: calc(100vw - 32px);
         max-height: calc(100vh - 16px);
         overflow: auto;
         overscroll-behavior: contain;
-        padding: 14px;
-        border-radius: 16px;
-        border: 1px solid rgba(148, 163, 184, 0.22);
-        background: rgba(15, 23, 42, 0.96);
-        color: #f8fafc;
+        padding: 12px;
+        border-radius: 12px;
+        border: 1px solid rgba(212, 218, 209, 0.2);
+        background:
+          linear-gradient(145deg, rgba(18, 21, 22, 0.96), rgba(31, 34, 34, 0.94)),
+          radial-gradient(circle at 10% 0%, rgba(20, 184, 166, 0.16), transparent 38%);
+        color: #f7fbf8;
         pointer-events: auto;
-        box-shadow: 0 18px 48px rgba(15, 23, 42, 0.35);
-        backdrop-filter: blur(14px);
+        box-shadow: 0 24px 60px rgba(17, 19, 21, 0.38), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+        backdrop-filter: blur(18px) saturate(1.25);
       }
-      :host([data-theme="light"]) .hcp-panel { background: rgba(255, 255, 255, 0.97); color: #0f172a; }
+      :host([data-theme="light"]) .hcp-panel {
+        background:
+          linear-gradient(145deg, rgba(255, 252, 245, 0.98), rgba(244, 247, 242, 0.96)),
+          radial-gradient(circle at 10% 0%, rgba(20, 184, 166, 0.12), transparent 38%);
+        color: #171a1c;
+        border-color: rgba(68, 78, 72, 0.14);
+        box-shadow: 0 22px 54px rgba(37, 44, 40, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.78);
+      }
       .hcp-head, .hcp-brand, .hcp-swatch, .hcp-actions, .hcp-sample-strip { display: flex; align-items: center; }
-      .hcp-head { justify-content: space-between; gap: 12px; margin-bottom: 8px; }
-      .hcp-brand { gap: 8px; font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; }
-      .hcp-dot { width: 10px; height: 10px; border-radius: 999px; background: linear-gradient(135deg, #fb7185 0%, #f59e0b 45%, #22c55e 100%); }
+      .hcp-head { justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+      .hcp-brand { gap: 9px; min-width: 0; }
+      .hcp-brand-copy { display: grid; gap: 1px; min-width: 0; }
+      .hcp-brand-copy span { font-size: 10px; color: #98a8a1; letter-spacing: 0.12em; text-transform: uppercase; font-weight: 700; }
+      .hcp-brand-copy strong { font-size: 14px; letter-spacing: 0; line-height: 1.1; }
+      :host([data-theme="light"]) .hcp-brand-copy span { color: #66746c; }
+      .hcp-dot {
+        width: 18px;
+        height: 18px;
+        border-radius: 7px;
+        background: conic-gradient(from 45deg, #14b8a6, #f59e0b, #f43f5e, #14b8a6);
+        box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.34), 0 8px 18px rgba(20, 184, 166, 0.16);
+        flex: 0 0 auto;
+      }
       .hcp-close {
         appearance: none;
         -webkit-appearance: none;
         display: inline-flex;
         align-items: center;
         justify-content: center;
-        width: 28px;
-        height: 28px;
+        width: 30px;
+        height: 30px;
         padding: 0;
         border: 0;
-        border-radius: 999px;
-        background: rgba(148, 163, 184, 0.18);
+        border-radius: 8px;
+        background: rgba(255, 255, 255, 0.08);
         color: inherit;
         font: inherit;
         font-size: 18px;
         line-height: 1;
         cursor: pointer;
-        transition: background 140ms ease, box-shadow 140ms ease, transform 140ms ease, color 140ms ease;
+        transition: background 160ms ease, box-shadow 160ms ease, transform 160ms ease, color 160ms ease;
       }
       .hcp-close:hover,
       .hcp-close:focus-visible,
       .hcp-close:active {
-        background: rgba(148, 163, 184, 0.28);
+        background: rgba(255, 255, 255, 0.14);
         color: #ffffff;
-        box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.18);
+        box-shadow: 0 0 0 3px rgba(20, 184, 166, 0.16);
         transform: translateY(-1px);
       }
       :host([data-theme="light"]) .hcp-close:hover,
       :host([data-theme="light"]) .hcp-close:focus-visible,
       :host([data-theme="light"]) .hcp-close:active {
-        background: rgba(226, 232, 240, 0.98);
-        color: #0f172a;
-        box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.14);
+        background: rgba(232, 237, 229, 0.98);
+        color: #171a1c;
+        box-shadow: 0 0 0 3px rgba(20, 184, 166, 0.14);
       }
       .hcp-close:focus-visible { outline: none; }
-      .hcp-status { margin-top: 10px; padding: 10px 12px; border-radius: 12px; font-size: 13px; font-weight: 800; line-height: 1.35; color: #e0f2fe; background: rgba(37, 99, 235, 0.28); border: 1px solid rgba(96, 165, 250, 0.34); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08); }
-      :host([data-theme="light"]) .hcp-status { color: #0f172a; background: rgba(219, 234, 254, 0.96); border-color: rgba(96, 165, 250, 0.42); }
-      .hcp-status[data-tone="locked"] { color: #ecfeff; background: linear-gradient(135deg, rgba(37, 99, 235, 0.9) 0%, rgba(14, 116, 144, 0.9) 100%); border-color: rgba(125, 211, 252, 0.45); box-shadow: 0 12px 26px rgba(14, 116, 144, 0.24); }
-      .hcp-status[data-tone="success"] { color: #ecfeff; background: linear-gradient(135deg, rgba(22, 163, 74, 0.96) 0%, rgba(13, 148, 136, 0.94) 100%); border-color: rgba(110, 231, 183, 0.46); box-shadow: 0 12px 26px rgba(13, 148, 136, 0.24); }
-      .hcp-status[data-tone="error"] { color: #fff1f2; background: linear-gradient(135deg, rgba(190, 24, 93, 0.96) 0%, rgba(225, 29, 72, 0.9) 100%); border-color: rgba(253, 164, 175, 0.46); box-shadow: 0 12px 26px rgba(190, 24, 93, 0.24); }
-      .hcp-path, .hcp-note, .hcp-zoom-note { font-size: 11px; color: #cbd5e1; }
-      :host([data-theme="light"]) .hcp-path, :host([data-theme="light"]) .hcp-note, :host([data-theme="light"]) .hcp-zoom-note { color: #475569; }
-      .hcp-hint { margin-top: 4px; font-size: 14px; font-weight: 700; word-break: break-word; }
-      .hcp-path { margin-top: 2px; overflow-wrap: anywhere; }
+      .hcp-readout {
+        padding: 11px;
+        border-radius: 10px;
+        border: 1px solid rgba(212, 218, 209, 0.16);
+        background: rgba(255, 255, 255, 0.06);
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+      }
+      :host([data-theme="light"]) .hcp-readout { background: rgba(255, 255, 255, 0.62); border-color: rgba(68, 78, 72, 0.12); }
+      .hcp-status { font-size: 11px; font-weight: 800; line-height: 1.25; color: #8ce4d7; letter-spacing: 0.08em; text-transform: uppercase; }
+      :host([data-theme="light"]) .hcp-status { color: #087d72; }
+      .hcp-status[data-tone="locked"] { color: #f6c85f; }
+      .hcp-status[data-tone="success"] { color: #9ae6b4; }
+      :host([data-theme="light"]) .hcp-status[data-tone="success"] { color: #15803d; }
+      .hcp-status[data-tone="error"] { color: #fda4af; }
+      :host([data-theme="light"]) .hcp-status[data-tone="error"] { color: #be123c; }
+      .hcp-path, .hcp-note, .hcp-zoom-note { font-size: 11px; color: #aebbb5; }
+      :host([data-theme="light"]) .hcp-path, :host([data-theme="light"]) .hcp-note, :host([data-theme="light"]) .hcp-zoom-note { color: #66746c; }
+      .hcp-hint { margin-top: 5px; font-size: 22px; line-height: 1.05; font-weight: 850; letter-spacing: 0; word-break: break-word; }
+      .hcp-path { margin-top: 6px; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
       .hcp-sample-strip { gap: 12px; margin-top: 12px; align-items: stretch; flex-wrap: wrap; }
       .hcp-zoom {
-        width: 110px;
-        height: 110px;
-        border-radius: 14px;
-        border: 1px solid rgba(148, 163, 184, 0.22);
-        background: linear-gradient(45deg, rgba(148, 163, 184, 0.25) 25%, transparent 25%), linear-gradient(-45deg, rgba(148, 163, 184, 0.25) 25%, transparent 25%), linear-gradient(45deg, transparent 75%, rgba(148, 163, 184, 0.25) 75%), linear-gradient(-45deg, transparent 75%, rgba(148, 163, 184, 0.25) 75%);
+        width: 126px;
+        height: 126px;
+        border-radius: 10px;
+        border: 1px solid rgba(212, 218, 209, 0.18);
+        background: linear-gradient(45deg, rgba(148, 163, 184, 0.22) 25%, transparent 25%), linear-gradient(-45deg, rgba(148, 163, 184, 0.22) 25%, transparent 25%), linear-gradient(45deg, transparent 75%, rgba(148, 163, 184, 0.22) 75%), linear-gradient(-45deg, transparent 75%, rgba(148, 163, 184, 0.22) 75%);
         background-size: 12px 12px;
         background-position: 0 0, 0 6px, 6px -6px, -6px 0;
         image-rendering: pixelated;
         flex: 0 0 auto;
+        box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05);
       }
-      .hcp-zoom-meta { display: flex; flex-direction: column; justify-content: center; gap: 4px; min-width: 0; }
-      .hcp-zoom-label { font-size: 13px; }
+      .hcp-zoom-meta { display: flex; flex-direction: column; justify-content: center; gap: 5px; min-width: 0; flex: 1; }
+      .hcp-zoom-label { font-size: 13px; letter-spacing: 0; }
       .hcp-zoom-coords { font-size: 11px; color: inherit; opacity: 0.85; }
       .hcp-primary { margin-top: 12px; align-items: center; }
-      .hcp-swatch { gap: 8px; border: 1px solid rgba(148, 163, 184, 0.18); border-radius: 12px; padding: 9px; background: rgba(255, 255, 255, 0.06); min-width: 0; }
-      :host([data-theme="light"]) .hcp-swatch { background: rgba(248, 250, 252, 0.94); }
+      .hcp-swatch { gap: 10px; border: 1px solid rgba(212, 218, 209, 0.16); border-radius: 10px; padding: 10px; background: rgba(255, 255, 255, 0.06); min-width: 0; }
+      :host([data-theme="light"]) .hcp-swatch { background: rgba(255, 255, 255, 0.68); border-color: rgba(68, 78, 72, 0.12); }
       .hcp-meta { display: flex; flex-direction: column; min-width: 0; flex: 1; }
-      .hcp-meta strong { font-size: 11px; }
-      .hcp-meta span { font-size: 10px; opacity: 0.86; overflow-wrap: anywhere; }
-      .hcp-chip { width: 24px; height: 24px; border-radius: 999px; border: 1px solid rgba(255, 255, 255, 0.4); background: linear-gradient(135deg, #d7dfea 0%, #edf2f7 100%); flex: 0 0 auto; }
-      .hcp-primary .hcp-chip { width: 30px; height: 30px; }
+      .hcp-meta strong { font-size: 11px; color: #aebbb5; }
+      :host([data-theme="light"]) .hcp-meta strong { color: #66746c; }
+      .hcp-meta span { font-size: 13px; font-weight: 750; opacity: 0.96; overflow-wrap: anywhere; }
+      .hcp-chip { width: 26px; height: 26px; border-radius: 8px; border: 1px solid rgba(255, 255, 255, 0.38); background: linear-gradient(135deg, #d7dfea 0%, #edf2f7 100%); flex: 0 0 auto; box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.08); }
+      .hcp-primary .hcp-chip { width: 36px; height: 36px; }
       .hcp-actions { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-top: 12px; }
       .hcp-actions button {
         appearance: none;
         -webkit-appearance: none;
         width: 100%;
         min-width: 0;
-        height: 36px;
+        height: 38px;
         padding: 0 10px;
-        border: 0;
-        border-radius: 10px;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 8px;
         cursor: pointer;
-        background: linear-gradient(135deg, #1d4ed8 0%, #0f766e 100%);
+        background: linear-gradient(135deg, #0f9f8d 0%, #0d766f 100%);
         color: #fff;
         font: inherit;
-        font-weight: 700;
+        font-size: 12px;
+        font-weight: 800;
         text-decoration: none;
         box-shadow: none;
         outline: none;
         overflow: hidden;
-        transition: filter 140ms ease, box-shadow 140ms ease, transform 140ms ease, opacity 140ms ease;
+        transition: filter 160ms ease, box-shadow 160ms ease, transform 160ms ease, opacity 160ms ease, background 160ms ease;
       }
       .hcp-actions button:hover,
       .hcp-actions button:focus-visible,
       .hcp-actions button:active {
-        background: linear-gradient(135deg, #1d4ed8 0%, #0f766e 100%);
+        background: linear-gradient(135deg, #12b8a4 0%, #0d766f 100%);
         color: #fff;
-        box-shadow: 0 8px 18px rgba(15, 118, 110, 0.24), 0 0 0 3px rgba(96, 165, 250, 0.12);
+        box-shadow: 0 10px 22px rgba(13, 118, 111, 0.25), 0 0 0 3px rgba(20, 184, 166, 0.12);
         filter: brightness(1.05);
         transform: translateY(-1px);
       }
@@ -1166,15 +1319,15 @@
         filter: none;
         transform: none;
       }
-      .hcp-actions .hcp-reset { background: rgba(148, 163, 184, 0.12); color: inherit; border: 1px solid rgba(148, 163, 184, 0.24); }
-      :host([data-theme="light"]) .hcp-actions .hcp-reset { background: rgba(241, 245, 249, 0.96); color: #0f172a; border-color: rgba(148, 163, 184, 0.4); }
+      .hcp-actions .hcp-reset { background: rgba(255, 255, 255, 0.07); color: inherit; border: 1px solid rgba(212, 218, 209, 0.18); }
+      :host([data-theme="light"]) .hcp-actions .hcp-reset { background: rgba(255, 255, 255, 0.8); color: #171a1c; border-color: rgba(68, 78, 72, 0.14); }
       .hcp-actions .hcp-reset:hover,
       .hcp-actions .hcp-reset:focus-visible,
       .hcp-actions .hcp-reset:active {
-        background: rgba(148, 163, 184, 0.18);
+        background: rgba(255, 255, 255, 0.12);
         color: inherit;
-        border: 1px solid rgba(148, 163, 184, 0.32);
-        box-shadow: 0 8px 18px rgba(15, 23, 42, 0.12), 0 0 0 3px rgba(148, 163, 184, 0.12);
+        border: 1px solid rgba(212, 218, 209, 0.24);
+        box-shadow: 0 8px 18px rgba(17, 19, 21, 0.14), 0 0 0 3px rgba(212, 218, 209, 0.1);
         filter: none;
       }
       .hcp-note { margin-top: 10px; }
@@ -1190,7 +1343,7 @@
           max-width: none;
           max-height: min(74vh, calc(100vh - 12px));
           padding: 12px;
-          border-radius: 18px;
+          border-radius: 12px;
         }
         .hcp-head { gap: 8px; }
         .hcp-brand { font-size: 11px; letter-spacing: 0.06em; }
@@ -1205,7 +1358,7 @@
           bottom: 6px;
           max-height: calc(100vh - 8px);
           padding: 10px;
-          border-radius: 14px;
+          border-radius: 10px;
         }
         .hcp-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       }
@@ -1287,9 +1440,13 @@
   }
 
   function createPoint(clientX, clientY) {
+    const x = Number(clientX);
+    const y = Number(clientY);
     return {
-      x: Math.round(Number(clientX) || 0),
-      y: Math.round(Number(clientY) || 0)
+      x: Number.isFinite(x) ? x : 0,
+      y: Number.isFinite(y) ? y : 0,
+      clientX: Number.isFinite(x) ? x : 0,
+      clientY: Number.isFinite(y) ? y : 0
     };
   }
 
@@ -1380,6 +1537,20 @@
 
   function clamp(value, min, max) {
     return Math.min(max, Math.max(min, value));
+  }
+
+  function roundCss(value) {
+    return String(Math.round(Number(value || 0) * 100) / 100);
+  }
+
+  function distanceFromAnchor(candidate, anchorX, anchorY) {
+    const dx = candidate.left - anchorX;
+    const dy = candidate.top - anchorY;
+    return Math.sqrt(dx * dx + dy * dy);
+  }
+
+  function isPointInsideRect(x, y, rect) {
+    return x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
   }
 
   function clampAlpha(value) {
