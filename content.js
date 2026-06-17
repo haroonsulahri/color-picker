@@ -14,6 +14,9 @@
   const RETICLE_SIZE = 34;
   const PANEL_EDGE_PADDING = 14;
   const PANEL_ANCHOR_GAP = 30;
+  const SURFACE_SAMPLE_RADIUS = 12;
+  const SURFACE_BUCKET_SIZE = 12;
+  const SURFACE_DOMINANCE_RATIO = 0.46;
   const DEFAULT_SETTINGS = {
     defaultFormat: "hex",
     copyOnClick: true,
@@ -502,23 +505,114 @@
       return null;
     }
 
-    const data = state.captureContext.getImageData(mapped.imageX, mapped.imageY, 1, 1).data;
-    const alpha = clampAlpha(data[3] / 255);
-    const color = {
-      r: data[0],
-      g: data[1],
-      b: data[2],
-      a: alpha,
-      label: "Primary",
-      source: "pixel",
-      cssText: alpha < 1
-        ? `rgba(${data[0]}, ${data[1]}, ${data[2]}, ${trimAlpha(alpha)})`
-        : `rgb(${data[0]}, ${data[1]}, ${data[2]})`
-    };
+    const surface = sampleSurfaceColor(mapped.imageX, mapped.imageY, mapped.scaleX, mapped.scaleY);
+    if (!surface) {
+      return null;
+    }
+
+    const color = buildSampleColor(surface);
 
     return {
       ...mapped,
-      color
+      color,
+      sampleMode: surface.mode
+    };
+  }
+
+  function sampleSurfaceColor(centerX, centerY, scaleX, scaleY) {
+    if (!state.captureContext || !state.capture) {
+      return null;
+    }
+
+    const width = state.capture.width;
+    const height = state.capture.height;
+    const radius = Math.max(3, Math.round(Math.max(scaleX || 1, scaleY || 1) * SURFACE_SAMPLE_RADIUS));
+    const startX = clamp(centerX - radius, 0, Math.max(0, width - 1));
+    const startY = clamp(centerY - radius, 0, Math.max(0, height - 1));
+    const endX = clamp(centerX + radius, 0, Math.max(0, width - 1));
+    const endY = clamp(centerY + radius, 0, Math.max(0, height - 1));
+    const sampleWidth = endX - startX + 1;
+    const sampleHeight = endY - startY + 1;
+    const pixels = state.captureContext.getImageData(startX, startY, sampleWidth, sampleHeight).data;
+    const buckets = new Map();
+    let total = 0;
+    let exact = null;
+
+    for (let y = 0; y < sampleHeight; y += 1) {
+      for (let x = 0; x < sampleWidth; x += 1) {
+        const index = (y * sampleWidth + x) * 4;
+        const pixel = {
+          r: pixels[index],
+          g: pixels[index + 1],
+          b: pixels[index + 2],
+          a: clampAlpha(pixels[index + 3] / 255)
+        };
+        const key = bucketColor(pixel);
+        const bucket = buckets.get(key) || {
+          key,
+          count: 0,
+          r: 0,
+          g: 0,
+          b: 0,
+          a: 0
+        };
+
+        bucket.count += 1;
+        bucket.r += pixel.r;
+        bucket.g += pixel.g;
+        bucket.b += pixel.b;
+        bucket.a += pixel.a;
+        buckets.set(key, bucket);
+        total += 1;
+
+        if (startX + x === centerX && startY + y === centerY) {
+          exact = {
+            ...pixel,
+            key
+          };
+        }
+      }
+    }
+
+    if (!total || !exact) {
+      return null;
+    }
+
+    const dominant = Array.from(buckets.values()).sort((a, b) => b.count - a.count)[0];
+    const useDominant = dominant &&
+      dominant.key !== exact.key &&
+      dominant.count / total >= SURFACE_DOMINANCE_RATIO;
+
+    if (!useDominant) {
+      return {
+        r: exact.r,
+        g: exact.g,
+        b: exact.b,
+        a: exact.a,
+        mode: "pixel"
+      };
+    }
+
+    return {
+      r: Math.round(dominant.r / dominant.count),
+      g: Math.round(dominant.g / dominant.count),
+      b: Math.round(dominant.b / dominant.count),
+      a: clampAlpha(dominant.a / dominant.count),
+      mode: "surface"
+    };
+  }
+
+  function buildSampleColor(sample) {
+    return {
+      r: sample.r,
+      g: sample.g,
+      b: sample.b,
+      a: sample.a,
+      label: "Primary",
+      source: sample.mode || "pixel",
+      cssText: sample.a < 1
+        ? `rgba(${sample.r}, ${sample.g}, ${sample.b}, ${trimAlpha(sample.a)})`
+        : `rgb(${sample.r}, ${sample.g}, ${sample.b})`
     };
   }
 
@@ -615,7 +709,9 @@
         label: "Sample"
       },
       border: null,
-      notes: ["Pixel sampled from a fresh visible-tab capture with device-pixel mapping."],
+      notes: [sample.sampleMode === "surface"
+        ? "Surface color stabilized from the pixels around the target center."
+        : "Pixel sampled from a fresh visible-tab capture with device-pixel mapping."],
       elementMeta: {
         tagName: "pixel",
         id: "",
@@ -1126,7 +1222,6 @@
         border-radius: 999px;
         border: 1px solid rgba(255, 255, 255, 0.98);
         background:
-          radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.98) 0 2px, transparent 3px),
           radial-gradient(circle at 50% 50%, rgba(20, 184, 166, 0.18), rgba(20, 184, 166, 0.04) 62%, transparent 64%);
         box-shadow:
           0 0 0 2px rgba(17, 19, 21, 0.72),
@@ -1151,8 +1246,9 @@
         width: 7px;
         height: 7px;
         border-radius: 999px;
-        background: #f8fafc;
-        box-shadow: 0 0 0 2px rgba(17, 19, 21, 0.9), 0 0 0 4px rgba(255, 255, 255, 0.42);
+        background: transparent;
+        border: 2px solid #14b8a6;
+        box-shadow: 0 0 0 1px rgba(17, 19, 21, 0.9), 0 0 0 4px rgba(255, 255, 255, 0.34);
         transform: translate(-50%, -50%);
       }
       .hcp-panel {
@@ -1551,6 +1647,19 @@
 
   function clamp(value, min, max) {
     return Math.min(max, Math.max(min, value));
+  }
+
+  function bucketColor(color) {
+    return [
+      bucketChannel(color.r),
+      bucketChannel(color.g),
+      bucketChannel(color.b),
+      Math.round(clampAlpha(color.a) * 10)
+    ].join(":");
+  }
+
+  function bucketChannel(value) {
+    return Math.round(clamp(Math.round(Number(value) || 0), 0, 255) / SURFACE_BUCKET_SIZE);
   }
 
   function roundCss(value) {
