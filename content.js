@@ -11,12 +11,13 @@
   const ACTIVE_CURSOR_ATTR = "data-hcp-picker-active";
   const HOVER_SETTLE_DELAY = 72;
   const VIEWPORT_REFRESH_DELAY = 120;
-  const RETICLE_SIZE = 34;
+  const RETICLE_SIZE = 22;
   const PANEL_EDGE_PADDING = 14;
   const PANEL_ANCHOR_GAP = 30;
   const SURFACE_SAMPLE_RADIUS = 12;
   const SURFACE_BUCKET_SIZE = 12;
   const SURFACE_DOMINANCE_RATIO = 0.46;
+  const MEDIA_EXACT_MIN_SIZE = 80;
   const DEFAULT_SETTINGS = {
     defaultFormat: "hex",
     copyOnClick: true,
@@ -505,7 +506,10 @@
       return null;
     }
 
-    const surface = sampleSurfaceColor(mapped.imageX, mapped.imageY, mapped.scaleX, mapped.scaleY);
+    const target = getSamplingTarget(clientX, clientY);
+    const surface = target.exact
+      ? sampleExactColor(mapped.imageX, mapped.imageY, target.reason)
+      : sampleSurfaceColor(mapped.imageX, mapped.imageY, mapped.scaleX, mapped.scaleY);
     if (!surface) {
       return null;
     }
@@ -515,7 +519,23 @@
     return {
       ...mapped,
       color,
-      sampleMode: surface.mode
+      sampleMode: surface.mode,
+      target
+    };
+  }
+
+  function sampleExactColor(imageX, imageY, reason) {
+    if (!state.captureContext || !state.capture) {
+      return null;
+    }
+
+    const data = state.captureContext.getImageData(imageX, imageY, 1, 1).data;
+    return {
+      r: data[0],
+      g: data[1],
+      b: data[2],
+      a: clampAlpha(data[3] / 255),
+      mode: reason || "pixel"
     };
   }
 
@@ -616,6 +636,127 @@
     };
   }
 
+  function getSamplingTarget(clientX, clientY) {
+    const element = getElementAtClientPoint(clientX, clientY);
+    if (!element) {
+      return {
+        exact: false,
+        reason: "surface",
+        label: "surface"
+      };
+    }
+
+    const media = findMediaSamplingElement(element);
+    if (!media) {
+      return {
+        exact: false,
+        reason: "surface",
+        label: describeElement(element)
+      };
+    }
+
+    const rect = media.getBoundingClientRect();
+    const interactive = findInteractiveAncestor(media);
+    const isSmallInlineAsset = interactive &&
+      Math.max(rect.width || 0, rect.height || 0) < MEDIA_EXACT_MIN_SIZE;
+
+    return {
+      exact: !isSmallInlineAsset,
+      reason: isSmallInlineAsset ? "surface" : media.tagName.toLowerCase(),
+      label: describeElement(media)
+    };
+  }
+
+  function getElementAtClientPoint(clientX, clientY) {
+    const x = Number.isFinite(Number(clientX)) ? Number(clientX) : 0;
+    const y = Number.isFinite(Number(clientY)) ? Number(clientY) : 0;
+    const rootHidden = dom.root && !dom.root.hidden;
+    const previousVisibility = rootHidden ? dom.root.style.visibility : "";
+
+    if (rootHidden) {
+      dom.root.style.visibility = "hidden";
+    }
+
+    try {
+      return document.elementFromPoint(x, y);
+    } finally {
+      if (rootHidden) {
+        dom.root.style.visibility = previousVisibility;
+      }
+    }
+  }
+
+  function findMediaSamplingElement(element) {
+    let current = element;
+    while (current && current !== document.documentElement) {
+      if (current.nodeType !== Node.ELEMENT_NODE) {
+        current = current.parentElement;
+        continue;
+      }
+
+      const tag = current.tagName ? current.tagName.toLowerCase() : "";
+      if (tag === "img" || tag === "canvas" || tag === "video") {
+        return current;
+      }
+
+      if (tag === "svg") {
+        return current;
+      }
+
+      if (current.ownerSVGElement) {
+        return current.ownerSVGElement;
+      }
+
+      if (hasRasterBackgroundImage(current)) {
+        return current;
+      }
+
+      current = current.parentElement;
+    }
+
+    return null;
+  }
+
+  function hasRasterBackgroundImage(element) {
+    if (!element || typeof getComputedStyle !== "function") {
+      return false;
+    }
+
+    const style = getComputedStyle(element);
+    return /\burl\(|image-set\(/i.test(style.backgroundImage || "");
+  }
+
+  function findInteractiveAncestor(element) {
+    let current = element;
+    while (current && current !== document.documentElement) {
+      if (current.nodeType !== Node.ELEMENT_NODE) {
+        current = current.parentElement;
+        continue;
+      }
+
+      if (current.matches("button, a, [role='button'], [role='menuitem'], summary, input, select, textarea")) {
+        return current;
+      }
+
+      current = current.parentElement;
+    }
+
+    return null;
+  }
+
+  function describeElement(element) {
+    if (!element || !element.tagName) {
+      return "surface";
+    }
+
+    const tag = element.tagName.toLowerCase();
+    const id = element.id ? `#${element.id}` : "";
+    const className = typeof element.className === "string" && element.className.trim()
+      ? `.${element.className.trim().split(/\s+/).slice(0, 2).join(".")}`
+      : "";
+    return `${tag}${id}${className}`;
+  }
+
   function mapClientPointToCapture(clientX, clientY) {
     if (!state.capture || !state.capture.viewport) {
       return null;
@@ -709,9 +850,7 @@
         label: "Sample"
       },
       border: null,
-      notes: [sample.sampleMode === "surface"
-        ? "Surface color stabilized from the pixels around the target center."
-        : "Pixel sampled from a fresh visible-tab capture with device-pixel mapping."],
+      notes: [getSampleNote(sample)],
       elementMeta: {
         tagName: "pixel",
         id: "",
@@ -720,6 +859,18 @@
         path: `Image ${sample.imageX}, ${sample.imageY} - ${sample.scaleX.toFixed(2)}x`
       }
     };
+  }
+
+  function getSampleNote(sample) {
+    if (sample.sampleMode === "surface") {
+      return "Surface color stabilized from the pixels around the target center.";
+    }
+
+    if (sample.target && sample.target.exact) {
+      return `Exact ${sample.target.reason} pixel sampled from the visible capture.`;
+    }
+
+    return "Pixel sampled from a fresh visible-tab capture with device-pixel mapping.";
   }
 
   function clearStatusTimer() {
@@ -1219,36 +1370,29 @@
         display: none;
         width: ${RETICLE_SIZE}px;
         height: ${RETICLE_SIZE}px;
-        border-radius: 999px;
-        border: 1px solid rgba(255, 255, 255, 0.98);
-        background:
-          radial-gradient(circle at 50% 50%, rgba(20, 184, 166, 0.18), rgba(20, 184, 166, 0.04) 62%, transparent 64%);
-        box-shadow:
-          0 0 0 2px rgba(17, 19, 21, 0.72),
-          0 10px 26px rgba(17, 19, 21, 0.26),
-          0 0 0 6px rgba(20, 184, 166, 0.12);
+        background: transparent;
         pointer-events: none;
         transform: translate(-50%, -50%);
         will-change: left, top;
       }
       .hcp-reticle-grid {
         position: absolute;
-        inset: 5px;
-        border-radius: 999px;
+        inset: 0;
         background:
-          linear-gradient(90deg, transparent calc(50% - 0.5px), rgba(17, 19, 21, 0.72) calc(50% - 0.5px), rgba(17, 19, 21, 0.72) calc(50% + 0.5px), transparent calc(50% + 0.5px)),
-          linear-gradient(0deg, transparent calc(50% - 0.5px), rgba(17, 19, 21, 0.72) calc(50% - 0.5px), rgba(17, 19, 21, 0.72) calc(50% + 0.5px), transparent calc(50% + 0.5px));
+          linear-gradient(90deg, transparent calc(50% - 0.5px), rgba(247, 251, 248, 0.98) calc(50% - 0.5px), rgba(247, 251, 248, 0.98) calc(50% + 0.5px), transparent calc(50% + 0.5px)),
+          linear-gradient(0deg, transparent calc(50% - 0.5px), rgba(247, 251, 248, 0.98) calc(50% - 0.5px), rgba(247, 251, 248, 0.98) calc(50% + 0.5px), transparent calc(50% + 0.5px));
+        filter: drop-shadow(0 1px 1px rgba(17, 19, 21, 0.88)) drop-shadow(0 0 2px rgba(20, 184, 166, 0.65));
       }
       .hcp-reticle-dot {
         position: absolute;
         left: 50%;
         top: 50%;
-        width: 7px;
-        height: 7px;
+        width: 6px;
+        height: 6px;
         border-radius: 999px;
-        background: transparent;
+        background: rgba(17, 19, 21, 0.32);
         border: 2px solid #14b8a6;
-        box-shadow: 0 0 0 1px rgba(17, 19, 21, 0.9), 0 0 0 4px rgba(255, 255, 255, 0.34);
+        box-shadow: 0 0 0 1px rgba(247, 251, 248, 0.95), 0 1px 2px rgba(17, 19, 21, 0.9);
         transform: translate(-50%, -50%);
       }
       .hcp-panel {
