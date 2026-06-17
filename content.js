@@ -18,6 +18,7 @@
   const SURFACE_BUCKET_SIZE = 12;
   const SURFACE_DOMINANCE_RATIO = 0.46;
   const MEDIA_EXACT_MIN_SIZE = 80;
+  const SMALL_EXACT_TARGET_MAX_SIZE = 28;
   const DEFAULT_SETTINGS = {
     defaultFormat: "hex",
     copyOnClick: true,
@@ -215,10 +216,6 @@
     event.stopPropagation();
     event.stopImmediatePropagation();
 
-    if (state.lockedPoint) {
-      flashStatus("Color already locked. Press Reset to sample another color.", 1800, "locked");
-      return;
-    }
     clearHoverTimer();
     state.pendingRefresh = false;
     const point = createPoint(event.clientX, event.clientY);
@@ -508,7 +505,7 @@
 
     const target = getSamplingTarget(clientX, clientY);
     const surface = target.exact
-      ? sampleExactColor(mapped.imageX, mapped.imageY, target.reason)
+      ? sampleExactColor(mapped.imageX, mapped.imageY, target.source || target.reason)
       : sampleSurfaceColor(mapped.imageX, mapped.imageY, mapped.scaleX, mapped.scaleY);
     if (!surface) {
       return null;
@@ -648,9 +645,11 @@
 
     const media = findMediaSamplingElement(element);
     if (!media) {
+      const exactSmallTarget = isSmallStandaloneTarget(element);
       return {
-        exact: false,
-        reason: "surface",
+        exact: exactSmallTarget,
+        reason: exactSmallTarget ? "small target" : "surface",
+        source: exactSmallTarget ? "pixel" : "surface",
         label: describeElement(element)
       };
     }
@@ -663,8 +662,23 @@
     return {
       exact: !isSmallInlineAsset,
       reason: isSmallInlineAsset ? "surface" : media.tagName.toLowerCase(),
+      source: isSmallInlineAsset ? "surface" : media.tagName.toLowerCase(),
       label: describeElement(media)
     };
+  }
+
+  function isSmallStandaloneTarget(element) {
+    if (!element || findInteractiveAncestor(element)) {
+      return false;
+    }
+
+    const rect = element.getBoundingClientRect();
+    const width = rect.width || 0;
+    const height = rect.height || 0;
+
+    return width > 0 &&
+      height > 0 &&
+      Math.max(width, height) <= SMALL_EXACT_TARGET_MAX_SIZE;
   }
 
   function getElementAtClientPoint(clientX, clientY) {
