@@ -1713,7 +1713,7 @@
         box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
       }
       :host([data-theme="light"]) .hcp-readout { background: rgba(255, 255, 255, 0.62); border-color: rgba(68, 78, 72, 0.12); }
-      .hcp-status { font-size: 11px; font-weight: 800; line-height: 1.25; color: #8ce4d7; letter-spacing: 0.08em; text-transform: uppercase; }
+      .hcp-status { font-size: 11px; font-weight: 600; line-height: 1.25; color: #8ce4d7; letter-spacing: 0.08em; text-transform: uppercase; }
       :host([data-theme="light"]) .hcp-status { color: #087d72; }
       .hcp-status[data-tone="locked"] { color: #f6c85f; }
       .hcp-status[data-tone="success"] { color: #9ae6b4; }
@@ -1764,7 +1764,7 @@
         color: #fff;
         font: inherit;
         font-size: 12px;
-        font-weight: 800;
+        font-weight: 600;
         text-decoration: none;
         box-shadow: none;
         outline: none;
