@@ -9,11 +9,12 @@
   const ROOT_ID = "haroone-color-picker-root";
   const CURSOR_STYLE_ID = "haroone-color-picker-cursor-style";
   const ACTIVE_CURSOR_ATTR = "data-hcp-picker-active";
-  const HOVER_SETTLE_DELAY = 72;
-  const VIEWPORT_REFRESH_DELAY = 120;
+  const HOVER_SETTLE_DELAY = 180;
+  const VIEWPORT_REFRESH_DELAY = 160;
   const RETICLE_SIZE = 22;
   const PANEL_EDGE_PADDING = 14;
   const PANEL_ANCHOR_GAP = 30;
+  const PANEL_REPOSITION_STEP = 24;
   const SURFACE_SAMPLE_RADIUS = 12;
   const SURFACE_BUCKET_SIZE = 12;
   const SURFACE_DOMINANCE_RATIO = 0.46;
@@ -38,10 +39,14 @@
     captureContext: null,
     refreshTimer: null,
     hoverTimer: null,
+    hoverFrame: null,
     refreshPromise: null,
     pendingRefresh: false,
     statusTimer: null,
-    captureMaskDepth: 0
+    captureMaskDepth: 0,
+    lastPointKey: "",
+    lastRenderKey: "",
+    panelPositionKey: ""
   };
 
   const dom = {};
@@ -102,8 +107,12 @@
     state.pendingRefresh = false;
     state.refreshPromise = null;
     state.captureMaskDepth = 0;
+    state.lastPointKey = "";
+    state.lastRenderKey = "";
+    state.panelPositionKey = "";
     clearRefreshTimer();
     clearHoverTimer();
+    clearHoverFrame();
     clearStatusTimer();
 
     if (dom.root) {
@@ -142,8 +151,12 @@
     state.pendingRefresh = false;
     state.refreshPromise = null;
     state.captureMaskDepth = 0;
+    state.lastPointKey = "";
+    state.lastRenderKey = "";
+    state.panelPositionKey = "";
     clearRefreshTimer();
     clearHoverTimer();
+    clearHoverFrame();
     clearStatusTimer();
     detachListeners();
     applyPickerCursor(false);
@@ -199,7 +212,7 @@
 
     const point = createPoint(event.clientX, event.clientY);
     state.hoverPoint = point;
-    updateFromPoint(point, false);
+    scheduleHoverRender();
     scheduleHoverSettleRefresh();
   }
 
@@ -217,6 +230,7 @@
     event.stopImmediatePropagation();
 
     clearHoverTimer();
+    clearHoverFrame();
     state.pendingRefresh = false;
     const point = createPoint(event.clientX, event.clientY);
     state.hoverPoint = point;
@@ -241,7 +255,7 @@
       return;
     }
 
-    if (!updateFromPoint(point, true)) {
+    if (!updateFromPoint(point, true, { force: true })) {
       restoreSelectionState(previousLockedPoint, previousSelection);
       flashStatus("Unable to sample the current pixel. Try again.", 2200, "error");
       return;
@@ -284,6 +298,7 @@
     if (state.lockedPoint) {
       clearRefreshTimer();
       clearHoverTimer();
+      clearHoverFrame();
       if (dom.reticle) {
         dom.reticle.style.display = "none";
       }
@@ -330,6 +345,28 @@
   function clearHoverTimer() {
     clearTimeout(state.hoverTimer);
     state.hoverTimer = null;
+  }
+
+  function scheduleHoverRender() {
+    if (state.hoverFrame) {
+      return;
+    }
+
+    state.hoverFrame = requestAnimationFrame(() => {
+      state.hoverFrame = null;
+      if (!state.enabled || state.lockedPoint || !state.hoverPoint) {
+        return;
+      }
+
+      updateFromPoint(state.hoverPoint, false);
+    });
+  }
+
+  function clearHoverFrame() {
+    if (state.hoverFrame) {
+      cancelAnimationFrame(state.hoverFrame);
+      state.hoverFrame = null;
+    }
   }
 
   async function refreshCapture(options = {}) {
@@ -396,7 +433,7 @@
 
       if (!skipUpdate) {
         if (point) {
-          updateFromPoint(point, locked);
+          updateFromPoint(point, locked, { force: true });
         } else {
           renderSelection(state.selection, locked);
           if (!state.selection) {
@@ -450,6 +487,8 @@
       capturedAt: capture.capturedAt || viewport.capturedAt || Date.now(),
       viewport
     };
+    state.lastPointKey = "";
+    state.lastRenderKey = "";
   }
 
   function getViewportMetrics() {
@@ -474,9 +513,10 @@
     };
   }
 
-  function updateFromPoint(point, locked) {
-    const sample = samplePoint(point.x, point.y);
-    if (!sample) {
+  function updateFromPoint(point, locked, options = {}) {
+    const mapped = mapClientPointToCapture(point.x, point.y);
+    if (!mapped) {
+      state.lastRenderKey = "";
       renderSelection(null, locked);
       clearZoom();
       if (dom.reticle) {
@@ -485,20 +525,74 @@
       return false;
     }
 
+    const pointKey = getMappedPointKey(mapped, locked);
+    if (!options.force && state.lastPointKey === pointKey && state.selection && state.selection.primary) {
+      positionReticle(mapped);
+      positionPanel(mapped);
+      return true;
+    }
+
+    const sample = samplePoint(point.x, point.y, mapped);
+    if (!sample) {
+      state.lastPointKey = "";
+      state.lastRenderKey = "";
+      renderSelection(null, locked);
+      clearZoom();
+      if (dom.reticle) {
+        dom.reticle.style.display = "none";
+      }
+      return false;
+    }
+
+    const renderKey = getSampleRenderKey(sample, locked);
+    const duplicate = !options.force && state.lastRenderKey === renderKey;
+    state.lastPointKey = pointKey;
     state.selection = buildSelection(sample);
-    renderSelection(state.selection, locked);
+
+    if (!duplicate) {
+      state.lastRenderKey = renderKey;
+      renderSelection(state.selection, locked);
+    }
+
     positionReticle(sample);
-    positionPanel(sample);
-    renderZoom(sample);
+    positionPanel(sample, { force: Boolean(options.force) });
+
+    if (!duplicate) {
+      renderZoom(sample);
+    }
+
     return true;
   }
 
-  function samplePoint(clientX, clientY) {
+  function getMappedPointKey(mapped, locked) {
+    return [
+      locked ? "locked" : "hover",
+      mapped.imageX,
+      mapped.imageY,
+      state.capture && state.capture.capturedAt ? state.capture.capturedAt : 0
+    ].join(":");
+  }
+
+  function getSampleRenderKey(sample, locked) {
+    const color = sample.color || {};
+    return [
+      locked ? "locked" : "hover",
+      sample.imageX,
+      sample.imageY,
+      sample.sampleMode || "pixel",
+      color.r,
+      color.g,
+      color.b,
+      Math.round((color.a || 0) * 1000)
+    ].join(":");
+  }
+
+  function samplePoint(clientX, clientY, mappedPoint) {
     if (!state.captureContext || !state.capture) {
       return null;
     }
 
-    const mapped = mapClientPointToCapture(clientX, clientY);
+    const mapped = mappedPoint || mapClientPointToCapture(clientX, clientY);
     if (!mapped) {
       return null;
     }
@@ -1110,14 +1204,21 @@
     dom.reticle.style.top = `${roundCss(sample.clientY)}px`;
   }
 
-  function positionPanel(anchorPoint) {
+  function positionPanel(anchorPoint, options = {}) {
     if (!dom.panel || dom.panel.hidden) {
+      state.panelPositionKey = "";
       return;
     }
 
     const viewport = getViewportMetrics();
     const bounds = getPanelViewportBounds(viewport);
     if (bounds.width <= 420) {
+      const mobileKey = `mobile:${bounds.width}:${bounds.height}`;
+      if (!options.force && state.panelPositionKey === mobileKey) {
+        return;
+      }
+
+      state.panelPositionKey = mobileKey;
       dom.panel.style.top = "auto";
       dom.panel.style.right = "10px";
       dom.panel.style.bottom = "10px";
@@ -1127,6 +1228,7 @@
 
     const point = anchorPoint || state.lockedPoint || state.hoverPoint;
     if (!point) {
+      state.panelPositionKey = "default";
       dom.panel.style.top = "16px";
       dom.panel.style.right = "16px";
       dom.panel.style.bottom = "auto";
@@ -1136,6 +1238,18 @@
 
     const anchorX = typeof point.clientX === "number" ? point.clientX : point.x;
     const anchorY = typeof point.clientY === "number" ? point.clientY : point.y;
+    const positionKey = [
+      Math.round(anchorX / PANEL_REPOSITION_STEP),
+      Math.round(anchorY / PANEL_REPOSITION_STEP),
+      bounds.width,
+      bounds.height
+    ].join(":");
+
+    if (!options.force && state.panelPositionKey === positionKey) {
+      return;
+    }
+
+    state.panelPositionKey = positionKey;
     const padding = PANEL_EDGE_PADDING;
     const offset = PANEL_ANCHOR_GAP;
     const panelWidth = Math.min(dom.panel.offsetWidth || 340, Math.max(260, bounds.width - padding * 2));
@@ -1204,8 +1318,12 @@
     state.lockedPoint = null;
     state.hoverPoint = null;
     state.selection = null;
+    state.lastPointKey = "";
+    state.lastRenderKey = "";
+    state.panelPositionKey = "";
     clearRefreshTimer();
     clearHoverTimer();
+    clearHoverFrame();
     clearStatusTimer();
 
     try {
@@ -1689,12 +1807,12 @@
     state.selection = previousSelection || null;
 
     if (state.lockedPoint) {
-      updateFromPoint(state.lockedPoint, true);
+      updateFromPoint(state.lockedPoint, true, { force: true });
       return;
     }
 
     if (state.hoverPoint) {
-      updateFromPoint(state.hoverPoint, false);
+      updateFromPoint(state.hoverPoint, false, { force: true });
       return;
     }
 
